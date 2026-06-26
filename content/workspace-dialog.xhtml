@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
+<!DOCTYPE dialog SYSTEM "chrome://global/locale/global.dtd">
+<dialog
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+  id="estravon-workspace-dialog"
+  title="Export to Workspace"
+  width="480"
+  persist="screenX screenY"
+  onload="ZoteroMarkerWorkspaceDialog.onLoad()"
+  buttons="accept,cancel"
+>
+  <script src="chrome://estravon/content/workspace-dialog.js"/>
+
+  <vbox flex="1" style="padding: 12px; gap: 8px;">
+
+    <!-- Read-only header -->
+    <hbox align="center">
+      <label value="Item:" style="font-weight: bold; min-width: 130px;"/>
+      <label id="zmw-item-title" value="" crop="end" flex="1"/>
+    </hbox>
+    <hbox align="center" style="margin-bottom: 4px;">
+      <label value="Workspaces root:" style="min-width: 130px;"/>
+      <label id="zmw-root-path" value="" crop="start" flex="1"
+             style="color: gray; font-size: 0.9em;"/>
+    </hbox>
+
+    <separator class="thin"/>
+
+    <!-- Workspace selector -->
+    <hbox align="center">
+      <label value="Workspace:" style="min-width: 130px;"
+             control="zmw-workspace-list"/>
+      <menulist id="zmw-workspace-list" flex="1"
+                oncommand="ZoteroMarkerWorkspaceDialog.onSelect()">
+        <menupopup/>
+      </menulist>
+    </hbox>
+
+    <!-- New workspace name — visible only when sentinel is selected -->
+    <hbox align="center" id="zmw-new-row" style="display: none;">
+      <label value="New workspace name:" style="min-width: 130px;"/>
+      <html:input id="zmw-new-name"
+                  style="flex: 1; margin: 2px;"
+                  placeholder="e.g. bayesian-methods"
+                  oninput="ZoteroMarkerWorkspaceDialog.onNewNameInput()"/>
+    </hbox>
+
+    <separator class="thin"/>
+
+    <!-- Section selector -->
+    <hbox align="center" style="margin-bottom: 2px;">
+      <label value="Sections to export:" style="font-weight: bold; min-width: 130px;"/>
+      <hbox style="gap: 6px;">
+        <button label="All"  oncommand="ZoteroMarkerWorkspaceDialog.selectAll()"/>
+        <button label="None" oncommand="ZoteroMarkerWorkspaceDialog.selectNone()"/>
+      </hbox>
+    </hbox>
+    <vbox id="zmw-section-list"
+          style="overflow-y: auto; max-height: 150px;
+                 border: 1px solid ThreeDShadow; border-radius: 3px; padding: 4px;"/>
+
+    <separator class="thin"/>
+
+    <!-- Live export path preview -->
+    <hbox align="center" style="margin-top: 4px;">
+      <label value="Export path:" style="min-width: 130px;"/>
+      <label id="zmw-export-path" value="" crop="start" flex="1"
+             style="font-size: 0.9em;"/>
+    </hbox>
+
+  </vbox>
+</dialog>

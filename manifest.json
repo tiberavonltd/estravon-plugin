@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2,
+  "name": "Estravon",
+  "version": "0.4.1",
+  "description": "Extract book sections to Markdown via the Marker API",
+  "applications": {
+    "gecko": {
+      "id": "estravon@tiberavon.com"
+    },
+    "zotero": {
+      "id": "estravon@tiberavon.com",
+      "update_url": "https://raw.githubusercontent.com/tiberavonltd/estravon-plugin/main/update.json",
+      "strict_min_version": "7.0",
+      "strict_max_version": "*"
+    }
+  },
+  "icons": {
+    "48": "content/icons/marker-icon.png",
+    "96": "content/icons/marker-icon@2x.png"
+  }
+}

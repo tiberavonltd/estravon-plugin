@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
+<!DOCTYPE dialog SYSTEM "chrome://global/locale/global.dtd">
+<dialog
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+  id="estravon-extract-dialog"
+  title="Extract Section"
+  width="440"
+  persist="screenX screenY"
+  onload="ZoteroMarkerDialog.onLoad()"
+  buttons="accept,cancel"
+>
+  <script src="chrome://estravon/content/extract-dialog.js"/>
+
+  <vbox flex="1" style="padding: 12px; gap: 8px;">
+
+    <!-- Read-only header -->
+    <hbox align="center">
+      <label value="Item:" style="font-weight: bold; min-width: 120px;"/>
+      <label id="zm-item-title" value="" crop="end" flex="1"/>
+    </hbox>
+    <hbox align="center" style="margin-bottom: 8px;">
+      <label value="Backend:" style="font-weight: bold; min-width: 120px;"/>
+      <label id="zm-backend-name" value=""/>
+    </hbox>
+
+    <separator class="thin"/>
+
+    <!-- PDF source selector -->
+    <hbox align="center">
+      <label value="PDF source:" style="min-width: 120px;"/>
+      <menulist id="zm-pdf-select" flex="1">
+        <menupopup/>
+      </menulist>
+    </hbox>
+
+    <!-- TOC shortcut — books and book sections only (shown/hidden by onLoad) -->
+    <hbox align="center" id="zm-toc-row" style="display: none;">
+      <spacer style="min-width: 120px;"/>
+      <html:input id="zm-toc-checkbox" type="checkbox"/>
+      <label value="This is the Table of Contents" control="zm-toc-checkbox"
+             style="margin-left: 4px;"/>
+    </hbox>
+
+    <!-- Split checkbox — paper types only (shown/hidden by onLoad) -->
+    <hbox align="center" id="zm-split-row" style="display: none;">
+      <spacer style="min-width: 120px;"/>
+      <html:input id="zm-split-checkbox" type="checkbox"/>
+      <label value="Split into sections" control="zm-split-checkbox"
+             style="margin-left: 4px;"/>
+    </hbox>
+
+    <!-- Force OCR — patent type only (shown/hidden by onLoad) -->
+    <hbox align="center" id="zm-force-ocr-row" style="display: none;">
+      <spacer style="min-width: 120px;"/>
+      <html:input id="zm-force-ocr-checkbox" type="checkbox"/>
+      <label value="Force OCR (recommended for scanned patents)"
+             control="zm-force-ocr-checkbox"
+             style="margin-left: 4px;"/>
+    </hbox>
+
+    <!-- Paper info label — visible when split is off -->
+    <hbox id="zm-paper-info-row" style="display: none;">
+      <spacer style="min-width: 120px;"/>
+      <label id="zm-paper-info" value="" style="color: gray; font-size: 0.9em;"/>
+    </hbox>
+
+    <!-- Total pages — visible when split is off (paper no-split mode only) -->
+    <hbox align="center" id="zm-total-pages-row" style="display: none;">
+      <label value="Total pages:" style="min-width: 120px;"/>
+      <html:input id="zm-total-pages" type="number" min="1"
+                  style="width: 80px; margin: 2px;"
+                  placeholder="e.g. 12"/>
+    </hbox>
+
+    <!-- Section name — html:input so .value assignment works after load -->
+    <hbox align="center" id="zm-section-name-row">
+      <label value="Section name:" style="min-width: 120px;"/>
+      <html:input id="zm-section-name" style="flex: 1; margin: 2px;"
+                  placeholder="e.g. chapter_01"/>
+    </hbox>
+
+    <!-- Page range -->
+    <hbox align="center" id="zm-page-range-row">
+      <label value="Page range:" style="min-width: 120px;"/>
+      <html:input id="zm-page-range" style="flex: 1; margin: 2px;"
+                  placeholder="e.g. 14-200"/>
+    </hbox>
+    <hbox id="zm-page-range-error-row">
+      <spacer style="min-width: 120px;"/>
+      <label id="zm-page-range-error"
+             value=""
+             style="color: red; font-size: 0.85em; visibility: hidden;"/>
+    </hbox>
+
+    <!-- Pages per chunk -->
+    <hbox align="center">
+      <label value="Pages per chunk:" style="min-width: 120px;"/>
+      <html:input id="zm-chunk-size" type="number" min="1" max="500"
+                  style="flex: 1; margin: 2px;"/>
+    </hbox>
+
+    <!-- Mode -->
+    <hbox align="center">
+      <label value="Mode:" control="zm-mode" style="min-width: 120px;"/>
+      <menulist id="zm-mode" flex="1">
+        <menupopup>
+          <menuitem value="fast"     label="Fast — quicker, less accurate"/>
+          <menuitem value="balanced" label="Balanced (recommended)"/>
+          <menuitem value="accurate" label="Accurate — slower, best quality"/>
+        </menupopup>
+      </menulist>
+    </hbox>
+
+    <!-- Also create Zotero note checkbox -->
+    <hbox align="center" id="zm-note-output-row">
+      <spacer style="min-width: 120px;"/>
+      <checkbox id="zm-create-note-checkbox" label="Also create Zotero note"/>
+    </hbox>
+
+    <separator class="thin" style="margin-top: 4px;"/>
+
+    <!-- Processing status (hidden until Extract is clicked) -->
+    <hbox id="zm-status-row" align="center" style="visibility: hidden;">
+      <label id="zm-status-label"
+             value="Processing&#x2026; (this may take several minutes)"
+             style="font-style: italic; color: #666;"/>
+    </hbox>
+
+  </vbox>
+</dialog>

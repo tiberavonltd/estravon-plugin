@@ -1,0 +1,130 @@
+<!--
+  preferences.xhtml
+  =================
+  Preference pane for estravon.
+  Registered by ZoteroMarker.init() via Zotero.PreferencePanes.register().
+  NOTE: no <?xml?> declaration — this file is loaded as a XUL fragment,
+  not a standalone document. An XML declaration in a fragment is malformed.
+-->
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml">
+
+  <groupbox>
+    <label><html:h2>Backend Connection</html:h2></label>
+
+    <hbox align="center">
+      <label value="Backend URL:"
+             style="min-width: 120px;"
+             control="estravon-pref-backendUrl"/>
+      <html:input id="estravon-pref-backendUrl"
+                  type="text"
+                  preference="extensions.estravon.backendUrl"
+                  style="flex: 1; min-width: 300px;"
+                  placeholder="http://localhost:7766"/>
+    </hbox>
+
+    <hbox align="center" style="margin-top: 4px;">
+      <spacer style="min-width: 120px;"/>
+      <label id="zm-pref-backend-status"
+             value="&#x25CF; Not checked"
+             style="color: gray; font-size: 0.9em; flex: 1;"/>
+      <button label="Check" oncommand="ZoteroMarkerPrefs.checkBackend()"/>
+    </hbox>
+
+    <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
+      The URL where the estravon Python backend is running.
+      Change this to point to a remote server if needed.
+    </description>
+
+    <hbox align="center" style="margin-top: 12px;">
+      <label value="API key:"
+             style="min-width: 120px;"
+             control="estravon-pref-apiKey"/>
+      <html:input id="estravon-pref-apiKey"
+                  type="password"
+                  preference="extensions.estravon.apiKey"
+                  autocomplete="off"
+                  style="flex: 1; min-width: 300px;"
+                  placeholder="Paste your API key here"/>
+    </hbox>
+
+    <hbox align="center" style="margin-top: 4px;">
+      <spacer style="min-width: 120px;"/>
+      <label id="zm-pref-balance-status"
+             value="&#x25CF; Enter key and click Check balance"
+             style="color: gray; font-size: 0.9em; flex: 1;"/>
+      <button label="Check balance" oncommand="ZoteroMarkerPrefs.checkBalance()"/>
+    </hbox>
+
+    <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
+      Required for the hosted backend (api.estravon.com).
+      Leave empty for local self-hosted deployments.
+      Get a key at estravon.com/register.
+    </description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2>Extraction Defaults</html:h2></label>
+
+    <hbox align="center">
+      <label value="Pages per chunk:"
+             style="min-width: 120px;"
+             control="estravon-pref-chunkSize"/>
+      <html:input id="estravon-pref-chunkSize"
+                  type="number"
+                  preference="extensions.estravon.defaultChunkSize"
+                  style="width: 80px;"
+                  min="10"
+                  max="500"/>
+    </hbox>
+
+    <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
+      API requests may time out on very long sections. 80 pages is safe
+      for most PDFs. Reduce for scanned books with heavy image content.
+    </description>
+
+    <hbox align="center" style="margin-top: 8px;">
+      <label value="Default mode:"
+             style="min-width: 120px;"
+             control="estravon-pref-mode"/>
+      <menulist id="estravon-pref-mode"
+                preference="extensions.estravon.defaultMode">
+        <menupopup>
+          <menuitem label="Fast" value="fast"/>
+          <menuitem label="Balanced (recommended)" value="balanced"/>
+          <menuitem label="Accurate (LLM post-processing)" value="accurate"/>
+        </menupopup>
+      </menulist>
+    </hbox>
+
+    <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
+      "Accurate" uses LLM post-processing for better tables and math
+      extraction (~50% more expensive per page).
+    </description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2>Workspace Export</html:h2></label>
+
+    <hbox align="center">
+      <label value="Workspaces folder:"
+             style="min-width: 120px;"
+             control="estravon-pref-workspacesRoot"/>
+      <html:input id="estravon-pref-workspacesRoot"
+                  type="text"
+                  preference="extensions.estravon.workspacesRoot"
+                  style="flex: 1; min-width: 220px;"
+                  placeholder="e.g. /home/user/workspaces"/>
+      <button label="Browse…"
+              style="margin-left: 4px;"
+              oncommand="ZoteroMarkerPrefs.browseWorkspacesRoot()"/>
+    </hbox>
+
+    <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
+      Parent folder that contains all your workspaces. Each workspace is a
+      subfolder here. Point Zettlr and Claude Desktop at individual workspace
+      subfolders, not this root.
+    </description>
+  </groupbox>
+
+</vbox>
