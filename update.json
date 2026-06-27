@@ -1,0 +1,12 @@
+{
+  "addons": {
+    "estravon@tiberavon.com": {
+      "updates": [
+        {
+          "version": "0.4.1",
+          "update_link": "https://github.com/tiberavonltd/estravon-plugin/releases/download/v0.4.1/estravon-0.4.1.xpi"
+        }
+      ]
+    }
+  }
+}
