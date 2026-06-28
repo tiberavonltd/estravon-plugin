@@ -22,14 +22,15 @@ pref("extensions.estravon.apiKey", "");
 
 /**
  * Base URL of the estravon Python backend.
- * Default: "http://localhost:7766" (same-machine deployment).
+ * Default: "https://api.estravon.com" (hosted service — requires an API key).
+ * For self-hosted: change to "http://localhost:7766" and leave apiKey empty.
  *
  * The plugin appends API paths to this URL:
  *   - backendUrl + "/ping"     → health check
  *   - backendUrl + "/process"  → extraction request
  *   - backendUrl + "/files/…"  → result file download
  */
-pref("extensions.estravon.backendUrl", "http://localhost:7766");
+pref("extensions.estravon.backendUrl", "https://api.estravon.com");
 
 // --- Extraction defaults ---
 

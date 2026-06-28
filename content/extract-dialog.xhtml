@@ -106,12 +106,17 @@
       <label value="Mode:" control="zm-mode" style="min-width: 120px;"/>
       <menulist id="zm-mode" flex="1">
         <menupopup>
-          <menuitem value="fast"     label="Fast — quicker, less accurate"/>
-          <menuitem value="balanced" label="Balanced (recommended)"/>
-          <menuitem value="accurate" label="Accurate — slower, best quality"/>
+          <menuitem value="fast"     label="Fast — layout-only, lowest cost"/>
+          <menuitem value="balanced" label="Balanced — recommended (default)"/>
+          <menuitem value="accurate" label="Accurate — LLM post-processing (subscription only)"/>
         </menupopup>
       </menulist>
     </hbox>
+
+    <description style="margin-top: 2px; color: gray; font-size: 0.85em;">
+      Fast and Balanced produce the same result on PAYG plans (Mistral pipeline).
+      Accurate is active on subscription plans (Datalab pipeline) only.
+    </description>
 
     <!-- Also create Zotero note checkbox -->
     <hbox align="center" id="zm-note-output-row">

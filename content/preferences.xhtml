@@ -20,7 +20,7 @@
                   type="text"
                   preference="extensions.estravon.backendUrl"
                   style="flex: 1; min-width: 300px;"
-                  placeholder="http://localhost:7766"/>
+                  placeholder="https://api.estravon.com"/>
     </hbox>
 
     <hbox align="center" style="margin-top: 4px;">
@@ -32,8 +32,9 @@
     </hbox>
 
     <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
-      The URL where the estravon Python backend is running.
-      Change this to point to a remote server if needed.
+      Default: https://api.estravon.com — hosted service, requires an API key below.
+      To run locally: install the backend, set this to http://localhost:7766, and leave
+      the API key empty. Setup guide at estravon.com/install
     </description>
 
     <hbox align="center" style="margin-top: 12px;">
@@ -57,8 +58,7 @@
     </hbox>
 
     <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
-      Required for the hosted backend (api.estravon.com).
-      Leave empty for local self-hosted deployments.
+      Required for api.estravon.com. Not needed for local backends (http://localhost:7766).
       Get a key at estravon.com/register.
     </description>
   </groupbox>
@@ -90,16 +90,17 @@
       <menulist id="estravon-pref-mode"
                 preference="extensions.estravon.defaultMode">
         <menupopup>
-          <menuitem label="Fast" value="fast"/>
-          <menuitem label="Balanced (recommended)" value="balanced"/>
-          <menuitem label="Accurate (LLM post-processing)" value="accurate"/>
+          <menuitem label="Fast — layout-only, lowest cost" value="fast"/>
+          <menuitem label="Balanced — recommended (default)" value="balanced"/>
+          <menuitem label="Accurate — LLM post-processing (subscription)" value="accurate"/>
         </menupopup>
       </menulist>
     </hbox>
 
     <description style="margin-top: 4px; color: gray; font-size: 0.9em;">
-      "Accurate" uses LLM post-processing for better tables and math
-      extraction (~50% more expensive per page).
+      Fast and Balanced produce the same result on current PAYG plans (Mistral pipeline).
+      Accurate adds LLM post-processing for tables and maths (~50% higher cost per page)
+      and is active on subscription plans (Datalab pipeline) only.
     </description>
   </groupbox>
 

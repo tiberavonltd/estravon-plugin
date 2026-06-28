@@ -159,13 +159,20 @@ window.ZoteroMarkerPrefs = {
         let keyInput = document.getElementById("estravon-pref-apiKey");
         let urlInput = document.getElementById("estravon-pref-backendUrl");
         let key = (keyInput ? keyInput.value : "").trim();
-        let url = (urlInput ? urlInput.value : "").trim() || "http://localhost:7766";
+        let url = (urlInput ? urlInput.value : "").trim() || "https://api.estravon.com";
         let label = document.getElementById("zm-pref-balance-status");
+
+        let isLocal = url.startsWith("http://localhost") || url.startsWith("http://127.");
 
         if (!key) {
             if (label) {
-                label.setAttribute("value", "✗ No API key entered");
-                label.style.color = "red";
+                if (isLocal) {
+                    label.setAttribute("value", "⚠ No key needed — local backend will be used");
+                    label.style.color = "gray";
+                } else {
+                    label.setAttribute("value", "✗ No API key entered");
+                    label.style.color = "red";
+                }
             }
             return;
         }
