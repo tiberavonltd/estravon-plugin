@@ -899,7 +899,12 @@ var ZoteroMarker = {
      * @throws {Error} If pdf-lib cannot parse the PDF (encrypted, corrupt, etc.)
      */
     async trimPdfToPageRange(pdfBytes, startPage, endPage) {
-        const { PDFDocument } = PDFLib;
+        // PDFLib is loaded by bootstrap.js; fall back to globalThis in case the
+        // UMD wrapper placed it there instead of the sandbox scope.
+        const _lib = (typeof PDFLib !== 'undefined' ? PDFLib : null)
+                  || ((typeof globalThis !== 'undefined') ? (/** @type {any} */ (globalThis)).PDFLib : null);
+        if (!_lib) throw new Error("pdf-lib not loaded — PDF trimming unavailable");
+        const { PDFDocument } = _lib;
 
         // ignoreEncryption: allow some protected PDFs that have no password
         const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
@@ -1268,13 +1273,25 @@ var ZoteroMarker = {
                     " MB, " + trimResult.pageCount + " pages, offset=" + pageOffset
                 );
             } catch (e) {
-                Zotero.debug("[estravon] PDF trim failed, uploading full file: " + e.message);
+                Zotero.debug("[estravon] PDF trim failed: " + e.message);
                 uploadBytes     = pdfBytes;
                 uploadPageRange = formData.pageRange;
                 pageOffset      = 0;
             }
         }
         _session.trimDoneAt = Date.now();
+
+        // Post-trim guard: abort if the file to upload is still over the server limit.
+        // This catches both trim failures on large files and page ranges too large to reduce enough.
+        if (uploadBytes.byteLength > PDF_UPLOAD_LIMIT_BYTES) {
+            const sizeMB = (uploadBytes.byteLength / 1024 / 1024).toFixed(0);
+            throw new Error(
+                `PDF is too large to upload (${sizeMB} MB). ` +
+                (formData.pageRange
+                    ? "Trimming failed — try a smaller page range or use a smaller document."
+                    : "Set a page range to extract only the pages you need.")
+            );
+        }
 
         // 3. Build multipart request
         let fd = new FormData();
