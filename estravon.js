@@ -7,6 +7,10 @@
 // can log which exact build triggered a given job or error.
 const PLUGIN_BUILD = "dev";
 
+// Trim PDFs larger than this before upload. Below the threshold the overhead
+// of parsing and rewriting the PDF structure is not worth the bandwidth saving.
+const PDF_TRIM_THRESHOLD_BYTES = 30 * 1024 * 1024;  // 30 MB
+
 /**
  * estravon.js
  * ================
@@ -877,6 +881,84 @@ var ZoteroMarker = {
         return await IOUtils.read(path);
     },
 
+    /**
+     * Trim a PDF to contain only the pages in the given 1-based range.
+     *
+     * Uses pdf-lib (vendored in lib/pdf-lib.min.js, loaded by bootstrap.js).
+     * Runs entirely in-process — the trimmed bytes never touch Zotero storage.
+     *
+     * @param {Uint8Array} pdfBytes - Full PDF bytes from IOUtils.read()
+     * @param {number} startPage    - 1-based start page (inclusive)
+     * @param {number} endPage      - 1-based end page (inclusive)
+     * @returns {Promise<{trimmedBytes: Uint8Array, pageCount: number}>}
+     * @throws {Error} If pdf-lib cannot parse the PDF (encrypted, corrupt, etc.)
+     */
+    async trimPdfToPageRange(pdfBytes, startPage, endPage) {
+        const { PDFDocument } = PDFLib;
+
+        // ignoreEncryption: allow some protected PDFs that have no password
+        const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+        const totalPages = srcDoc.getPageCount();
+
+        if (startPage < 1 || endPage > totalPages || startPage > endPage) {
+            throw new Error(
+                `Page range ${startPage}-${endPage} invalid for ${totalPages}-page PDF`
+            );
+        }
+
+        const pageIndices = [];
+        for (let i = startPage - 1; i < endPage; i++) {
+            pageIndices.push(i);
+        }
+
+        const newDoc = await PDFDocument.create();
+        const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
+        copiedPages.forEach(page => newDoc.addPage(page));
+
+        const trimmed = await newDoc.save();
+        return {
+            trimmedBytes: new Uint8Array(trimmed),
+            pageCount:    copiedPages.length,
+        };
+    },
+
+    /**
+     * Fire-and-forget session close for a completed job.
+     * Sends plugin timing marks and session counters to POST /jobs/{id}/ack.
+     * Failures are silently swallowed — ack delivery is best-effort.
+     *
+     * @param {string} jobId
+     * @param {{ submitDoneAt: number|null, firstPollAt: number|null,
+     *            resultReceivedAt: number|null, pollCount: number,
+     *            errorCount: number }} session
+     */
+    async _sendAck(jobId, session) {
+        const toISO = ms => ms ? new Date(ms).toISOString() : null;
+        const payload = {
+            plugin_timing: {
+                submit_at:        toISO(session.submitDoneAt),
+                first_poll_at:    toISO(session.firstPollAt),
+                done_received_at: toISO(session.resultReceivedAt),
+                ack_sent_at:      new Date().toISOString(),
+            },
+            plugin_session: {
+                plugin_version:  PLUGIN_BUILD,
+                total_polls:     session.pollCount,
+                errors_received: session.errorCount,
+            },
+        };
+        try {
+            await fetch(`${this.getBackendUrl()}/jobs/${jobId}/ack`, {
+                method:  "POST",
+                headers: { ...this._backendHeaders(), "Content-Type": "application/json" },
+                body:    JSON.stringify(payload),
+            });
+            Zotero.debug("[estravon] /ack sent for job " + jobId);
+        } catch (e) {
+            Zotero.debug("[estravon] /ack failed (non-fatal): " + e.message);
+        }
+    },
+
 
     // -----------------------------------------------------------------------
     // Backend communication
@@ -928,7 +1010,7 @@ var ZoteroMarker = {
      * @param {((msg: string) => void)|null} [onProgress] - called with a status string on each poll
      * @returns {Promise<ProcessResponse>}
      */
-    async pollJobResult(job_id, onProgress = null) {
+    async pollJobResult(job_id, onProgress = null, _session = null) {
         const FAST_INTERVAL_MS = 3000;
         const SLOW_INTERVAL_MS = 10000;
         const SWITCH_AT_MS     = 60000;
@@ -937,15 +1019,23 @@ var ZoteroMarker = {
         let elapsed = 0;
 
         while (true) {
+            if (_session) {
+                _session.pollCount++;
+                if (!_session.firstPollAt) _session.firstPollAt = Date.now();
+            }
             let pollResp;
             try {
-                pollResp = await fetch(this.getBackendUrl() + "/jobs/" + job_id, {
+                let pollUrl = this.getBackendUrl() + "/jobs/" + job_id;
+                if (_session) pollUrl += "?poll_n=" + _session.pollCount;
+                pollResp = await fetch(pollUrl, {
                     headers: this._backendHeaders(),
                 });
             } catch (netErr) {
+                if (_session) _session.errorCount++;
                 throw new Error("Network error polling job status: " +
                     (netErr instanceof Error ? netErr.message : String(netErr)));
             }
+            if (!pollResp.ok && _session) _session.errorCount++;
 
             /** @type {JobPollResponse} */
             let data;
@@ -1115,20 +1205,81 @@ var ZoteroMarker = {
         // FormData and Blob are not in Zotero's sandbox by default — import them
         Cu.importGlobalProperties(["Blob", "FormData"]);
 
+        // 0. Session timing (shared with pollJobResult and _sendAck)
+        const _session = {
+            userTriggeredAt:  Date.now(),
+            pdfReadAt:        null,
+            trimDoneAt:       null,
+            submitDoneAt:     null,
+            firstPollAt:      null,
+            resultReceivedAt: null,
+            pollCount:        0,
+            errorCount:       0,
+        };
+
         // 1. Read PDF bytes
         let pdfBytes = await IOUtils.read(pdfPath);
+        _session.pdfReadAt = Date.now();
+        const originalSizeBytes = pdfBytes.byteLength;
 
-        // 2. Build multipart request
+        // 2. Trim if: (a) a page range is specified AND (b) file exceeds threshold.
+        //    If trim fails, fall back silently to the full file.
+        let uploadBytes     = pdfBytes;
+        let uploadPageRange = formData.pageRange;
+        let pageOffset      = 0;
+
+        if (formData.pageRange && pdfBytes.byteLength > PDF_TRIM_THRESHOLD_BYTES) {
+            try {
+                let parts = formData.pageRange.split("-");
+                let start = parseInt(parts[0], 10);
+                let end   = parseInt(parts[1], 10);
+
+                Zotero.debug(
+                    "[estravon] PDF " + (pdfBytes.byteLength / 1024 / 1024).toFixed(1) +
+                    " MB > threshold — trimming to pages " + start + "-" + end
+                );
+
+                let trimResult = await this.trimPdfToPageRange(pdfBytes, start, end);
+                uploadBytes     = trimResult.trimmedBytes;
+                pageOffset      = start - 1;
+                uploadPageRange = "1-" + trimResult.pageCount;
+
+                pdfBytes = null;  // release original for GC before upload
+
+                Zotero.debug(
+                    "[estravon] Trimmed to " + (uploadBytes.byteLength / 1024 / 1024).toFixed(1) +
+                    " MB, " + trimResult.pageCount + " pages, offset=" + pageOffset
+                );
+            } catch (e) {
+                Zotero.debug("[estravon] PDF trim failed, uploading full file: " + e.message);
+                uploadBytes     = pdfBytes;
+                uploadPageRange = formData.pageRange;
+                pageOffset      = 0;
+            }
+        }
+        _session.trimDoneAt = Date.now();
+
+        // 3. Build multipart request
         let fd = new FormData();
-        fd.append("pdf_file", new Blob([pdfBytes], { type: "application/pdf" }), itemKey + ".pdf");
+        fd.append("pdf_file", new Blob([uploadBytes], { type: "application/pdf" }), itemKey + ".pdf");
         fd.append("section_name",    formData.sectionName);
-        if (formData.pageRange) {
-            fd.append("page_range", formData.pageRange);
+        if (uploadPageRange) {
+            fd.append("page_range", uploadPageRange);
         }
         fd.append("chunk_size",      String(formData.chunkSize));
         fd.append("mode",            formData.mode);
         fd.append("force_ocr",       String(formData.forceOcr || false));
         fd.append("source_item_key", itemKey);
+        if (pageOffset > 0) {
+            fd.append("page_offset", String(pageOffset));
+        }
+
+        // 4. Client context block — enriches server-side telemetry without extra round-trips
+        fd.append("_client_pdf_size_bytes",     String(originalSizeBytes));
+        fd.append("_client_pdf_trimmed",        String(pageOffset > 0));
+        fd.append("_client_trimmed_size_bytes", String(uploadBytes.byteLength));
+        fd.append("_client_time_setup_ms",      String(Date.now() - _session.userTriggeredAt));
+        fd.append("_client_plugin_version",     PLUGIN_BUILD);
 
         // 3. POST /process
         //    Local backend:  waits synchronously, returns 200 + files.
@@ -1159,6 +1310,7 @@ var ZoteroMarker = {
         if (response.status === 202) {
             // Hosted backend: job queued — poll until done
             let queued = /** @type {QueuedResponse} */ (await response.json());
+            _session.submitDoneAt = Date.now();
             Zotero.debug("[estravon] Job queued, rq_job_id=" + queued.job_id +
                          ", queue_position=" + queued.queue_position +
                          ", est_wait_s=" + queued.est_wait_s);
@@ -1175,7 +1327,8 @@ var ZoteroMarker = {
             try {
                 processResponse = await this.pollJobResult(
                     queued.job_id,
-                    formData.onProgress || null
+                    formData.onProgress || null,
+                    _session,
                 );
             } catch (e) {
                 this._showError(window, "Extraction failed",
@@ -1186,7 +1339,9 @@ var ZoteroMarker = {
         } else {
             // Local backend: synchronous 200 with result already in body
             processResponse = await response.json();
+            _session.submitDoneAt = Date.now();
         }
+        _session.resultReceivedAt = Date.now();
 
         Zotero.debug("[estravon] /process done, job_id=" + processResponse.job_id +
                      ", files=" + processResponse.files.length);
@@ -1201,7 +1356,8 @@ var ZoteroMarker = {
         item.addTag("estravon");
         await item.saveTx();
 
-        // 8. Done — caller closes the dialog and the attached files appear in Zotero
+        // 8. Send session ack (best-effort — never blocks the caller)
+        await this._sendAck(processResponse.job_id, _session).catch(() => {});
     },
 
     /**

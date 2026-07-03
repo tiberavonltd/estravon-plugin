@@ -40,7 +40,8 @@ function startup({ id, version, rootURI }, reason) {
         ["locale",  "estravon", "en-US", "locale/en-US/"]
     ]);
 
-    // 2. Load main plugin script into this sandbox's scope
+    // 2. Load vendored libraries and main plugin script
+    Services.scriptloader.loadSubScript(rootURI + "lib/pdf-lib.min.js");
     Services.scriptloader.loadSubScript(rootURI + "estravon.js");
 
     // 3. Initialise
