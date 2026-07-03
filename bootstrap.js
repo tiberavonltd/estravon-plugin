@@ -23,6 +23,11 @@ var ZoteroMarker;
 // Module-level chrome handle, must be destructed in shutdown()
 var chromeHandle;
 
+// Module-level reference to pdf-lib exports.
+// Must be at module scope (not inside startup()) so that estravon.js, loaded
+// via a separate loadSubScript call, can see it as a sandbox-global variable.
+var PDFLib;
+
 /**
  * Called when the plugin is enabled or Zotero starts with the plugin
  * already enabled.
@@ -42,11 +47,12 @@ function startup({ id, version, rootURI }, reason) {
 
     // 2. Load vendored libraries and main plugin script
     Services.scriptloader.loadSubScript(rootURI + "lib/pdf-lib.min.js");
-    // pdf-lib's UMD wrapper targets `globalThis` in modern JS environments, which
-    // in the Zotero bootstrap sandbox is NOT the same scope as `this` / the sandbox
-    // global. Bring it in explicitly so estravon.js can reference `PDFLib` normally.
-    if (typeof PDFLib === 'undefined') {
-        var PDFLib = (typeof globalThis !== 'undefined') ? (/** @type {any} */ (globalThis)).PDFLib : undefined;
+    // pdf-lib's UMD wrapper sets PDFLib on `globalThis`, which in the Zotero bootstrap
+    // sandbox may differ from the sandbox's own scope. Copy it into the module-level
+    // `var PDFLib` (declared above, outside all functions) so that estravon.js, loaded
+    // by the next loadSubScript, sees it as a sandbox-global identifier.
+    if (!PDFLib && typeof globalThis !== 'undefined') {
+        PDFLib = (/** @type {any} */ (globalThis)).PDFLib || null;
     }
     Services.scriptloader.loadSubScript(rootURI + "estravon.js");
 

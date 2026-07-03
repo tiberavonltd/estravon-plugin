@@ -906,8 +906,16 @@ var ZoteroMarker = {
         if (!_lib) throw new Error("pdf-lib not loaded — PDF trimming unavailable");
         const { PDFDocument } = _lib;
 
+        // IOUtils.read() returns a Uint8Array from Zotero's sandbox realm. pdf-lib lives
+        // in globalThis's realm. Firefox Xray wrappers make cross-realm instanceof fail,
+        // so pdf-lib rejects the bytes as an unknown type.
+        // Fix: wrap the same underlying buffer with globalThis's Uint8Array constructor
+        // so pdf-lib's `instanceof Uint8Array` check passes. Zero-copy.
+        const _GT = /** @type {any} */ (typeof globalThis !== 'undefined' ? globalThis : self);
+        const safeBytes = new _GT.Uint8Array(pdfBytes.buffer, pdfBytes.byteOffset, pdfBytes.byteLength);
+
         // ignoreEncryption: allow some protected PDFs that have no password
-        const srcDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+        const srcDoc = await PDFDocument.load(safeBytes, { ignoreEncryption: true });
         const totalPages = srcDoc.getPageCount();
 
         if (startPage < 1 || endPage > totalPages || startPage > endPage) {
