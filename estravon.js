@@ -11,6 +11,11 @@ const PLUGIN_BUILD = "dev";
 // of parsing and rewriting the PDF structure is not worth the bandwidth saving.
 const PDF_TRIM_THRESHOLD_BYTES = 30 * 1024 * 1024;  // 30 MB
 
+// Hard limit for uploads without a page range. The server's nginx is configured
+// to reject bodies larger than this. Warn the user early rather than showing a
+// cryptic HTTP 413 after a long upload.
+const PDF_UPLOAD_LIMIT_BYTES = 200 * 1024 * 1024;  // 200 MB
+
 /**
  * estravon.js
  * ================
@@ -1222,7 +1227,19 @@ var ZoteroMarker = {
         _session.pdfReadAt = Date.now();
         const originalSizeBytes = pdfBytes.byteLength;
 
-        // 2. Trim if: (a) a page range is specified AND (b) file exceeds threshold.
+        // 2a. Guard: reject files that would exceed the server's upload limit.
+        //     Trimming only fires when a page range is set; without one, a file
+        //     over 200 MB will be rejected by nginx as HTTP 413.
+        if (originalSizeBytes > PDF_UPLOAD_LIMIT_BYTES && !formData.pageRange) {
+            const sizeMB = (originalSizeBytes / 1024 / 1024).toFixed(0);
+            throw new Error(
+                `PDF is too large to upload in full (${sizeMB} MB). ` +
+                `Set a page range to extract only the pages you need, ` +
+                `or use a smaller document.`
+            );
+        }
+
+        // 2b. Trim if: (a) a page range is specified AND (b) file exceeds threshold.
         //    If trim fails, fall back silently to the full file.
         let uploadBytes     = pdfBytes;
         let uploadPageRange = formData.pageRange;
