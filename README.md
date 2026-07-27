@@ -214,9 +214,6 @@ exposes:
 - **Convert to Markdown file** — the reverse: shown on a child note (other
   than the extraction log itself), converts its HTML content back into a
   `.md` file attachment.
-- **Query Tools Server…** (optional) — if `toolsServerUrl` is configured,
-  opens a free-text query dialog backed by the agentic tools server
-  (`zm-tools-server`), streaming its response via SSE.
 - **Large-PDF handling** — before uploading, the plugin vendors
   [`pdf-lib`](https://pdf-lib.js.org/) to trim the source PDF down to just the
   requested page range whenever the file is larger than 30 MB, and refuses
@@ -230,9 +227,8 @@ exposes:
 - **First-launch onboarding** — if the configured backend is unreachable
   the first time the plugin is used, it opens a one-time "Get started at
   estravon.com" prompt instead of a bare connection-error dialog.
-- **Live ping indicators** in the settings pane — confirm connectivity to
-  both the backend and the tools server without opening the extraction
-  dialog.
+- **Live ping indicator** in the settings pane — confirm connectivity to the
+  backend without opening the extraction dialog.
 
 ---
 
@@ -282,9 +278,8 @@ predictable shape back rather than needing a `try`/`catch` around every call:
 **`attach` (default `true`)** — controls whether Estravon files the result for you:
 - `attach: true` (default) — full plugin behaviour: downloads and attaches the `.md`
   (and any images) to the Zotero item, writes/updates the `[estravon] Extraction log`
-  note, tags the item `estravon`, and updates the tools-server registry if configured.
-  `attachmentIDs` in the result are the created `.md` attachments' Zotero item IDs
-  (not the image attachments).
+  note, and tags the item `estravon`. `attachmentIDs` in the result are the created
+  `.md` attachments' Zotero item IDs (not the image attachments).
 - `attach: false` — no Zotero-side filing at all. Resolves with the raw markdown text
   per chunk instead; you handle attaching, note-writing, or anything else yourself.
   Image references inside the returned markdown are left as the backend's relative
@@ -329,7 +324,6 @@ Plugin preferences are in **Zotero → Settings → Estravon**:
 | `extensions.estravon.apiKey` | *(empty)* | API key for the hosted backend. Not needed for self-hosted deployments |
 | `extensions.estravon.defaultChunkSize` | `80` | Pages per extraction API call |
 | `extensions.estravon.defaultMode` | `balanced` | `fast` / `balanced` / `accurate` |
-| `extensions.estravon.toolsServerUrl` | `http://localhost:7767` | URL of the `zm-tools-server` for global registry updates and the "Query Tools Server…" dialog; leave empty to disable both |
 | `extensions.estravon.workspacesRoot` | *(empty)* | Absolute path to the parent folder for **Export to Workspace…**; must be set before that command can be used |
 
 To use a remote backend, change `backendUrl` to the server's address — no code
@@ -341,7 +335,6 @@ After each successful extraction the plugin:
 
 1. Appends a row to the `[estravon] Extraction log` child note on the item.
 2. Adds the `estravon` tag to the parent item.
-3. Posts a best-effort registry update to `toolsServerUrl + "/registry/update"` (if set).
 
 The extraction log note contains a 9-column HTML table:
 
