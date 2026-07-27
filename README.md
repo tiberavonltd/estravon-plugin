@@ -236,6 +236,89 @@ exposes:
 
 ---
 
+## Developer API — triggering extraction from another Zotero plugin
+
+If you're building a separate Zotero plugin and want to trigger Estravon extraction
+programmatically — without reimplementing the backend HTTP contract or the
+attach/log-note logic yourself — call the public hook Estravon registers on the
+global `Zotero` object while it's active:
+
+```js
+if (Zotero.Estravon?.extract) {
+  console.log("Estravon hook available, API version", Zotero.Estravon.apiVersion);
+}
+```
+
+### `Zotero.Estravon.extract(options)`
+
+```js
+const result = await Zotero.Estravon.extract({
+  itemID,            // required — Zotero item ID to attach results to
+  pdfAttachmentID,    // optional — which PDF attachment; defaults to the item's
+                      // first PDF attachment in attachment order if omitted
+  pageRange,          // required — 1-based inclusive, e.g. "112-148"
+  sectionName,        // required — label for the result + log note
+  mode,               // optional — "fast" | "balanced" | "accurate", default from prefs
+  chunkSize,          // optional — pages per API call, default from prefs
+  forceOcr,           // optional — default false
+  attach,             // optional — default true (see below)
+  silent,             // optional — default true (see below)
+});
+```
+
+**Never rejects.** `extract()` always resolves — even on failure — so you get a
+predictable shape back rather than needing a `try`/`catch` around every call:
+
+```ts
+{
+  status: "done" | "error",
+  jobId?: string,
+  markdown?: { label: string, markdown: string }[],  // present when attach:false
+  attachmentIDs?: number[],                          // present when attach:true
+  error?: string,                                    // present when status is "error"
+}
+```
+
+**`attach` (default `true`)** — controls whether Estravon files the result for you:
+- `attach: true` (default) — full plugin behaviour: downloads and attaches the `.md`
+  (and any images) to the Zotero item, writes/updates the `[estravon] Extraction log`
+  note, tags the item `estravon`, and updates the tools-server registry if configured.
+  `attachmentIDs` in the result are the created `.md` attachments' Zotero item IDs
+  (not the image attachments).
+- `attach: false` — no Zotero-side filing at all. Resolves with the raw markdown text
+  per chunk instead; you handle attaching, note-writing, or anything else yourself.
+  Image references inside the returned markdown are left as the backend's relative
+  `/files/...` URLs (there are no Zotero attachment keys to rewrite them to in this
+  mode) — resolve them against your own configured backend URL if you need the images.
+
+**`silent` (default `true`)** — controls whether a failure also pops Estravon's own
+error dialog in the user's Zotero window:
+- `silent: true` (default) — failures are silent; you get `{status:"error", error}`
+  and decide yourself whether/how to surface it. This is the default because a caller
+  triggering extraction in the background shouldn't have Estravon pop an unsolicited
+  modal dialog the user has no context for.
+- `silent: false` — Estravon also shows its own native error dialog (the same one the
+  right-click menu path uses) in addition to returning the error result.
+
+**No completion event.** There is no separate `Zotero.Notifier`-style event for
+extraction completion — a successful `attach:true` call ends with new attachments
+being added to the item via `Zotero.Attachments.importFromFile()`, which already
+fires Zotero's own native item-change notifications. If you need a fire-and-forget
+pattern instead of awaiting the promise, listen to those rather than a custom event.
+
+**A backend must be reachable.** The hook honours whatever backend the user has
+configured (`extensions.estravon.backendUrl` — local or hosted), exactly like the
+right-click menu path. If nothing is configured or reachable, `extract()` resolves
+`{status:"error", error:"..."}` — it does not make extraction possible without a
+backend; see the vanilla backend's [README](../backend/README.md) for the
+zero-cost local option (`--backend mineru`, no API key required).
+
+**Stability**: this is a versioned public API (`Zotero.Estravon.apiVersion`,
+independent of the plugin's own release version) — breaking changes will come with a
+version bump and a deprecation note here, not a silent behaviour change.
+
+---
+
 ## Configuration
 
 Plugin preferences are in **Zotero → Settings → Estravon**:
