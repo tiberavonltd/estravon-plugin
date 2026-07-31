@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Estravon",
-  "version": "0.4.9",
+  "version": "0.5.0",
   "description": "Extract book sections to Markdown via the Marker API",
   "applications": {
     "gecko": {

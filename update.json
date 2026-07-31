@@ -3,6 +3,10 @@
     "estravon@tiberavon.com": {
       "updates": [
         {
+          "version": "0.5.0",
+          "update_link": "https://github.com/tiberavonltd/estravon-plugin/releases/download/v0.5.0/estravon-0.5.0.xpi"
+        },
+        {
           "version": "0.4.9",
           "update_link": "https://github.com/tiberavonltd/estravon-plugin/releases/download/v0.4.9/estravon-0.4.9.xpi"
         },

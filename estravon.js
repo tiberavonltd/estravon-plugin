@@ -16,6 +16,12 @@ const PDF_TRIM_THRESHOLD_BYTES = 30 * 1024 * 1024;  // 30 MB
 // cryptic HTTP 413 after a long upload.
 const PDF_UPLOAD_LIMIT_BYTES = 200 * 1024 * 1024;  // 200 MB
 
+// Version of the public Zotero.Estravon hook API (see extract() below) — independent
+// of the plugin's own manifest version, since a plugin patch release should not force
+// a hook API bump, and vice versa. Bump this only on a breaking change to extract()'s
+// request/response shape, and note it in the README's Developer API section.
+const HOOK_API_VERSION = "1.0.0";
+
 /**
  * estravon.js
  * ================
@@ -187,6 +193,45 @@ const PDF_UPLOAD_LIMIT_BYTES = 200 * 1024 * 1024;  // 200 MB
  * @property {((msg: string) => void)|null} [onProgress] - set by the dialog to update its status label
  * @property {boolean} [createNote]   - when true, create a Zotero note alongside each .md attachment
  * @property {boolean} [forceOcr]     - when true, discard the existing text layer and re-OCR via Surya (patents)
+ */
+
+/**
+ * Options accepted by the public Zotero.Estravon.extract() hook — lets another Zotero
+ * plugin trigger extraction through the installed Estravon plugin, without knowing
+ * backend HTTP details or re-implementing the attach/log-note logic itself.
+ *
+ * Unlike DialogFormData (collected from the extraction dialog by a human), this is
+ * assembled programmatically by another Zotero plugin, so item/attachment are
+ * resolved from IDs rather than from the current UI selection.
+ *
+ * @typedef {Object} HookExtractOptions
+ * @property {number}  itemID            - Zotero item ID to attach results to
+ * @property {number}  [pdfAttachmentID] - Specific PDF attachment ID; if omitted, the
+ *   item's first PDF attachment in attachment order is used
+ * @property {string}  pageRange         - 1-based inclusive, e.g. "14-200"
+ * @property {string}  sectionName       - Label for the result + log note
+ * @property {"fast"|"balanced"|"accurate"} [mode] - default from prefs
+ * @property {number}  [chunkSize]       - default from prefs
+ * @property {boolean} [forceOcr=false]
+ * @property {boolean} [attach=true]     - true: attach .md + write log note (full
+ *   plugin behaviour); false: resolve with markdown only, caller handles filing
+ * @property {boolean} [silent=true]     - false: also show Estravon's own error dialog
+ *   on failure. Defaults to true so a caller triggering extraction in the background
+ *   never gets an unsolicited modal dialog in the user's Zotero window; a caller
+ *   invoking this from its own UI can opt in to Estravon's dialog with silent:false.
+ */
+
+/**
+ * Result of Zotero.Estravon.extract(). Always resolves — never rejects — so callers
+ * get a predictable shape rather than needing a try/catch around every call.
+ *
+ * @typedef {Object} HookExtractResult
+ * @property {"done"|"error"} status
+ * @property {string}   [jobId]
+ * @property {{label: string, markdown: string}[]} [markdown] - present when attach:false
+ * @property {number[]} [attachmentIDs] - present when attach:true (the .md attachments'
+ *   Zotero item IDs, not the image attachments)
+ * @property {string}   [error] - present when status is "error"
  */
 
 /**
@@ -537,6 +582,18 @@ var ZoteroMarker = {
             Zotero.debug("[estravon] PreferencePanes.register failed: " + e);
         });
 
+        // Public extraction hook for other Zotero plugins — registered here (not in
+        // bootstrap.js) so it lives alongside the other Zotero.* registration above and
+        // bootstrap.js stays lifecycle-glue-only. Unregistered in unregisterHook(),
+        // called from bootstrap.js shutdown() — see that function for why (avoids
+        // leaving a dangling Zotero.Estravon another plugin could call into after this
+        // plugin has torn down). See README.md's "Developer API" section for the
+        // full extract() contract this exposes.
+        Zotero.Estravon = {
+            apiVersion: HOOK_API_VERSION,
+            extract: (/** @type {HookExtractOptions} */ options) => this.extract(options),
+        };
+
         // First-install onboarding: open the "Get started" page once.
         // Uses a pref so it fires exactly once, regardless of how the plugin
         // was installed or re-enabled.
@@ -707,6 +764,18 @@ var ZoteroMarker = {
         }
     },
 
+    /**
+     * Unregister the public Zotero.Estravon hook. Called by bootstrap.js shutdown(),
+     * mirroring the chromeHandle.destruct() discipline already used there — a plugin
+     * disable/uninstall must not leave a dangling Zotero.Estravon another plugin could
+     * still call into after this plugin has torn down.
+     */
+    unregisterHook() {
+        if (typeof Zotero !== "undefined" && Zotero.Estravon) {
+            delete Zotero.Estravon;
+        }
+    },
+
 
     // -----------------------------------------------------------------------
     // Menu visibility
@@ -841,6 +910,58 @@ var ZoteroMarker = {
             pdfAttachments,   // [{title, path}, ...]
             existingSections,
         };
+    },
+
+    /**
+     * Resolve a Zotero item and PDF attachment path from bare IDs, for the public
+     * Zotero.Estravon.extract() hook.
+     *
+     * Deliberately separate from getSelectedItemWithPDF() above: that function reads
+     * the *current UI selection* via window.ZoteroPane, which has no meaning for a
+     * programmatic call from another plugin — a hook caller supplies itemID directly
+     * instead.
+     *
+     * @param {number} itemID
+     * @param {number} [pdfAttachmentID] - specific PDF attachment; if omitted, the
+     *   first PDF attachment in attachment order is used — there's no dialog here for
+     *   the caller to pick from the way the menu path has, so a deterministic default
+     *   was chosen over rejecting outright when an item has more than one PDF.
+     * @returns {Promise<{item: any, pdfPath: string, itemKey: string}>}
+     * @throws {Error} If the item doesn't exist, has no PDF attachment, the given
+     *   pdfAttachmentID isn't a PDF attachment of that item, or the PDF isn't on disk.
+     */
+    async _resolveItemAndPdf(itemID, pdfAttachmentID) {
+        let item = Zotero.Items.get(itemID);
+        if (!item) {
+            throw new Error(`No Zotero item with ID ${itemID}`);
+        }
+
+        let att = null;
+        if (pdfAttachmentID) {
+            att = Zotero.Items.get(pdfAttachmentID);
+            if (!att || att.attachmentContentType !== "application/pdf" || att.parentID !== item.id) {
+                throw new Error(`Attachment ${pdfAttachmentID} is not a PDF attachment of item ${itemID}`);
+            }
+        } else {
+            // First PDF attachment in attachment order — see the JSDoc above for why.
+            for (let id of item.getAttachments()) {
+                let candidate = Zotero.Items.get(id);
+                if (candidate && candidate.attachmentContentType === "application/pdf") {
+                    att = candidate;
+                    break;
+                }
+            }
+            if (!att) {
+                throw new Error(`Item ${itemID} has no PDF attachment`);
+            }
+        }
+
+        let pdfPath = await att.getFilePath();
+        if (!pdfPath) {
+            throw new Error("PDF file not available on disk. Is it synced?");
+        }
+
+        return { item, pdfPath, itemKey: item.key };
     },
 
     /**
@@ -1209,17 +1330,31 @@ var ZoteroMarker = {
     /**
      * Upload the PDF to /process and coordinate attachment + note update.
      *
-     * Called from the dialog's onExtract callback. Throws on error so the
-     * dialog can re-enable its form via the .catch() handler.
+     * Called from the dialog's onExtract callback (menu path) and from the public
+     * extract() hook. Throws on error — the menu path's dialog re-enables its form via
+     * the .catch() handler; extract() wraps this call in its own try/catch and converts
+     * a thrown error into a resolved {status:"error"} result rather than propagating
+     * the throw to its own caller.
      *
-     * @param {Window}         window
+     * @param {Window|null}    window  - null when options.silent is true (no dialog to anchor)
      * @param {any}            item       - Zotero.Item (parent)
      * @param {string}         pdfPath    - Absolute path to the PDF
      * @param {string}         itemKey    - Zotero item key
      * @param {DialogFormData} formData
-     * @returns {Promise<void>}
+     * @param {{ silent?: boolean, attach?: boolean }} [options]
+     *   silent (default false): when true, never calls _showError() — a background hook
+     *     caller shouldn't have a modal dialog pop up in the user's Zotero window with
+     *     no context for which add-on triggered it. The menu path relies on the dialog
+     *     being shown, so it always passes silent:false (or omits options entirely).
+     *   attach (default true): when false, skips attachResults()/updateTraceabilityNote()/
+     *     tagging/registry update and instead fetches markdown text only, for a caller
+     *     that wants to handle filing the result itself — used by the hook, never by
+     *     the menu path.
+     * @returns {Promise<{jobId: string, attachmentIDs: number[], markdown: {label:string,markdown:string}[]|null}>}
      */
-    async runExtraction(window, item, pdfPath, itemKey, formData) {
+    async runExtraction(window, item, pdfPath, itemKey, formData, options = {}) {
+        const { silent = false, attach = true } = options;
+
         // FormData and Blob are not in Zotero's sandbox by default — import them
         Cu.importGlobalProperties(["Blob", "FormData"]);
 
@@ -1335,7 +1470,7 @@ var ZoteroMarker = {
             });
         } catch (e) {
             let msg = e instanceof Error ? e.message : "Network error contacting backend";
-            this._showError(window, "Extraction failed", msg, e instanceof Error ? e : null);
+            if (!silent) this._showError(window, "Extraction failed", msg, e instanceof Error ? e : null);
             throw e;
         }
 
@@ -1343,7 +1478,7 @@ var ZoteroMarker = {
             let errData = {};
             try { errData = await response.json(); } catch (_) {}
             let msg = (/** @type {any} */ (errData)).error || `HTTP ${response.status} from /process`;
-            this._showError(window, "Extraction failed", msg);
+            if (!silent) this._showError(window, "Extraction failed", msg);
             throw new Error(msg);
         }
 
@@ -1373,9 +1508,11 @@ var ZoteroMarker = {
                     _session,
                 );
             } catch (e) {
-                this._showError(window, "Extraction failed",
-                    e instanceof Error ? e.message : String(e),
-                    e instanceof Error ? e : null);
+                if (!silent) {
+                    this._showError(window, "Extraction failed",
+                        e instanceof Error ? e.message : String(e),
+                        e instanceof Error ? e : null);
+                }
                 throw e;
             }
         } else {
@@ -1388,18 +1525,109 @@ var ZoteroMarker = {
         Zotero.debug("[estravon] /process done, job_id=" + processResponse.job_id +
                      ", files=" + processResponse.files.length);
 
-        // 4. Attach result files to Zotero item
-        await this.attachResults(item, processResponse, { createNote: formData.createNote });
+        /** @type {number[]} */
+        let attachmentIDs = [];
+        /** @type {{label:string,markdown:string}[]|null} */
+        let markdown = null;
 
-        // 5. Write / update traceability note
-        await this.updateTraceabilityNote(item, processResponse, formData);
+        if (attach) {
+            // 4. Attach result files to Zotero item
+            attachmentIDs = await this.attachResults(item, processResponse, { createNote: formData.createNote });
 
-        // 6. Tag the parent item for global discovery
-        item.addTag("estravon");
-        await item.saveTx();
+            // 5. Write / update traceability note
+            await this.updateTraceabilityNote(item, processResponse, formData);
+
+            // 6. Tag the parent item for global discovery
+            item.addTag("estravon");
+            await item.saveTx();
+
+        } else {
+            // attach:false (hook only, never the menu path) — resolve with markdown
+            // text, no Zotero-side filing. Caller handles attaching/note-writing itself.
+            markdown = await this._fetchMarkdownOnly(processResponse);
+        }
 
         // 8. Send session ack (best-effort — never blocks the caller)
         await this._sendAck(processResponse.job_id, _session).catch(() => {});
+
+        return { jobId: processResponse.job_id, attachmentIDs, markdown };
+    },
+
+    /**
+     * Public extraction hook for other Zotero plugins — registered on the global
+     * Zotero.Estravon object in init() above. Lets another add-on trigger extraction
+     * through the installed Estravon plugin without knowing backend HTTP details or
+     * re-implementing the attach/log steps.
+     *
+     * Three behaviours worth knowing about if you're calling this:
+     *   - silent is a per-call opt-in (default true): a background caller never
+     *        gets an unsolicited modal dialog in the user's Zotero window unless it
+     *        explicitly asks for one via silent:false.
+     *   - pdfAttachmentID, if omitted, resolves to the item's first PDF attachment
+     *        in attachment order (see _resolveItemAndPdf()).
+     *   - no dedicated completion event is fired; a caller that wants a
+     *        fire-and-forget pattern should listen to Zotero's own native item-change
+     *        notifications (triggered by Zotero.Attachments.importFromFile() inside
+     *        attachResults()) rather than a custom Estravon event.
+     *
+     * Never rejects — always resolves, including on failure, so callers get a
+     * predictable {status, ...} shape rather than needing a try/catch around every call.
+     *
+     * @param {HookExtractOptions} options
+     * @returns {Promise<HookExtractResult>}
+     */
+    async extract(options) {
+        try {
+            // Destructured inside the try (with the `options || {}` fallback) rather
+            // than at the top of the function: a caller invoking extract() with no
+            // argument at all must still get a resolved {status:"error"} result, not a
+            // rejected promise, per this method's never-rejects contract.
+            const {
+                itemID, pdfAttachmentID, pageRange, sectionName,
+                mode, chunkSize, forceOcr = false,
+                attach = true, silent = true,
+            } = options || {};
+
+            if (!itemID)     throw new Error("itemID is required");
+            if (!sectionName) throw new Error("sectionName is required");
+            if (!pageRange)   throw new Error("pageRange is required");
+
+            let { item, pdfPath, itemKey } = await this._resolveItemAndPdf(itemID, pdfAttachmentID);
+
+            let defaultChunkSize = Zotero.Prefs.get("extensions.estravon.defaultChunkSize", true) || 80;
+            let defaultMode      = Zotero.Prefs.get("extensions.estravon.defaultMode", true) || "balanced";
+
+            /** @type {DialogFormData} */
+            let formData = {
+                sectionName,
+                selectedPdfPath: pdfPath,
+                pageRange,
+                chunkSize:  chunkSize || defaultChunkSize,
+                mode:       /** @type {"fast"|"balanced"|"accurate"} */ (mode || defaultMode),
+                forceOcr,
+                createNote: false,
+                onProgress: null,
+            };
+
+            // silent:true (default) → no window to anchor a dialog to, and
+            // runExtraction() never calls _showError() when silent anyway.
+            let window = silent ? null : (Zotero.getMainWindows()[0] || null);
+
+            let result = await this.runExtraction(
+                window, item, pdfPath, itemKey, formData, { silent, attach }
+            );
+
+            return {
+                status:        "done",
+                jobId:         result.jobId,
+                markdown:      result.markdown || undefined,
+                attachmentIDs: attach ? result.attachmentIDs : undefined,
+            };
+        } catch (e) {
+            let message = e instanceof Error ? e.message : String(e);
+            Zotero.debug("[estravon] Zotero.Estravon.extract failed: " + message);
+            return { status: "error", error: message };
+        }
     },
 
     /**
@@ -1408,13 +1636,17 @@ var ZoteroMarker = {
      * @param {any}             item
      * @param {ProcessResponse} processResponse
      * @param {{ createNote?: boolean }} [options]
-     * @returns {Promise<void>}
+     * @returns {Promise<number[]>} Zotero item IDs of the created .md attachments
+     *   (not the image attachments) — consumed by the public hook's `attachmentIDs`.
      */
     async attachResults(item, processResponse, options = {}) {
         let baseUrl = this.getBackendUrl();
         let tempDir = PathUtils.join(PathUtils.tempDir, "estravon-" + processResponse.job_id);
         Zotero.debug("[estravon] attachResults: tempDir=" + tempDir);
         await IOUtils.makeDirectory(tempDir, { ignoreExisting: true });
+
+        /** @type {number[]} */
+        let mdAttachmentIDs = [];
 
         try {
             for (let file of processResponse.files) {
@@ -1458,12 +1690,15 @@ var ZoteroMarker = {
                 let mdPath = PathUtils.join(tempDir, file.label + ".md");
                 await IOUtils.writeUTF8(mdPath, mdText);
                 Zotero.debug("[estravon] md written, calling importFromFile");
-                await Zotero.Attachments.importFromFile({
+                let mdItem = await Zotero.Attachments.importFromFile({
                     file: mdPath,
                     parentItemID: item.id,
                     title: file.label + ".md",
                     contentType: "text/plain",
                 });
+                if (mdItem && mdItem.id) {
+                    mdAttachmentIDs.push(mdItem.id);
+                }
                 Zotero.debug("[estravon] md imported");
                 if (options.createNote) {
                     await this._createNoteFromMarkdown(item, file.label, mdText);
@@ -1473,6 +1708,29 @@ var ZoteroMarker = {
         } finally {
             await IOUtils.remove(tempDir, { recursive: true }).catch(() => {});
         }
+
+        return mdAttachmentIDs;
+    },
+
+    /**
+     * Fetch each chunk's markdown text without attaching anything to Zotero — used by
+     * extract({attach:false}). Unlike attachResults(), does not download images or
+     * rewrite image links (there are no Zotero attachment keys to rewrite them to), so
+     * image references in the returned markdown are left as the backend's relative
+     * /files/... URLs for the caller to resolve against the backend base URL themselves.
+     *
+     * @param {ProcessResponse} processResponse
+     * @returns {Promise<{label: string, markdown: string}[]>}
+     */
+    async _fetchMarkdownOnly(processResponse) {
+        let baseUrl = this.getBackendUrl();
+        /** @type {{label: string, markdown: string}[]} */
+        let out = [];
+        for (let file of processResponse.files) {
+            let mdText = await (await fetch(baseUrl + file.md_url, { headers: this._backendHeaders() })).text();
+            out.push({ label: file.label, markdown: mdText });
+        }
+        return out;
     },
 
     /**
@@ -1925,7 +2183,12 @@ var ZoteroMarker = {
      * Show an error dialog. Offers a "Copy debug info" button that puts a
      * structured report (versions, backend URL, stack trace) on the clipboard.
      *
-     * @param {Window}     window
+     * Only ever called with silent:false call sites in runExtraction() (window is
+     * guaranteed real there); the |null case exists so the type matches the {Window|null}
+     * window param threaded through runExtraction() for the silent:true / hook path,
+     * which never reaches this function.
+     *
+     * @param {Window|null} window
      * @param {string}     title
      * @param {string}     message
      * @param {Error|null} [error=null] - original Error for stack trace

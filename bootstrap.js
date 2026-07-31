@@ -67,14 +67,16 @@ function startup({ id, version, rootURI }, reason) {
  * Called when the plugin is disabled or Zotero shuts down.
  *
  * CRITICAL: must remove all injected DOM elements to avoid orphan nodes
- * after disable/uninstall, and must destruct the chromeHandle to avoid
- * leaking chrome registrations across disable/enable cycles.
+ * after disable/uninstall, must unregister the public Zotero.Estravon hook so no
+ * other plugin can call into a torn-down instance, and must destruct the
+ * chromeHandle to avoid leaking chrome registrations across disable/enable cycles.
  *
  * @param {object} params - { id, version, rootURI }
  * @param {number} reason - APP_SHUTDOWN | ADDON_DISABLE | ADDON_UNINSTALL | ADDON_DOWNGRADE
  */
 function shutdown({ id, version, rootURI }, reason) {
     ZoteroMarker.removeFromAllWindows();
+    ZoteroMarker.unregisterHook();
     if (chromeHandle) {
         chromeHandle.destruct();
         chromeHandle = null;
