@@ -268,6 +268,17 @@ const SUPPORTED_ITEM_TYPES = new Set([
     "book", "bookSection",
     "journalArticle", "conferencePaper", "report", "preprint",
     "patent",
+    // "webpage": Zotero Connector's fallback parent type when a page's site
+    // translator fails to recognize it, even when what's actually being
+    // saved is a PDF.
+    // "document": the default parent type for a local drag-and-drop PDF
+    // when Zotero's DOI/ISBN recognition fails (Zotero's generic catch-all
+    // type, not "no parent at all").
+    // Both land here so the PDF-with-wrong-parent-type case still gets the
+    // extraction menu item; the existing "must have a PDF attachment" gate
+    // in _onPopupShowing() already excludes genuine non-PDF Web Page/Document
+    // items.
+    "webpage", "document",
 ]);
 
 
@@ -629,7 +640,8 @@ var ZoteroMarker = {
      * Inject the right-click context menu item into a single Zotero window.
      *
      * Supported item types (SUPPORTED_ITEM_TYPES):
-     *   "book", "bookSection", "journalArticle"
+     *   "book", "bookSection", "journalArticle", "conferencePaper", "report",
+     *   "preprint", "patent", "webpage", "document"
      *
      * Note — Zotero 8 MenuManager alternative
      * -----------------------------------------
@@ -788,7 +800,8 @@ var ZoteroMarker = {
      * Visibility rules:
      * 1. Exactly one item must be selected.
      * 2. The item type must be in SUPPORTED_ITEM_TYPES ("book", "bookSection",
-     *    "journalArticle", "conferencePaper", "report", "preprint", "patent").
+     *    "journalArticle", "conferencePaper", "report", "preprint", "patent",
+     *    "webpage", "document").
      * 3. The item must have at least one PDF attachment.
      *
      * @param {Window} window - The Zotero window where the menu opened

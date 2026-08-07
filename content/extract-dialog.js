@@ -76,7 +76,9 @@ var ZoteroMarkerDialog = {
         // Classify item type
         let itemType = this._args.itemType || "";
         let isBook   = ["book", "bookSection"].includes(itemType);
-        let isPaper  = ["journalArticle", "conferencePaper", "report", "preprint"].includes(itemType);
+        // "webpage"/"document" land here: neither has book-like table-of-contents
+        // structure, so the no-TOC/split-available defaults fit better than isBook.
+        let isPaper  = ["journalArticle", "conferencePaper", "report", "preprint", "webpage", "document"].includes(itemType);
         let isPatent = itemType === "patent";
 
         // Show/hide type-specific rows
@@ -231,7 +233,7 @@ var ZoteroMarkerDialog = {
      */
     onAccept() {
         let itemType = this._args.itemType || "";
-        let isPaper  = ["journalArticle", "conferencePaper", "report", "preprint"].includes(itemType);
+        let isPaper  = ["journalArticle", "conferencePaper", "report", "preprint", "webpage", "document"].includes(itemType);
         let isSplit  = isPaper && document.getElementById("zm-split-checkbox").checked;
 
         // Determine page range
